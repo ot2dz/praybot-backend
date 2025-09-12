@@ -1,0 +1,18 @@
+{
+  "name": "praybot-backend",
+  "version": "1.0.0",
+  "description": "Backend server and Telegram bot for the Prayer Timetable Extractor.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "author": "",
+  "license": "ISC"
+}
