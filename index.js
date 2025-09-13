@@ -129,7 +129,7 @@ async function sendPrayerNotification(prayerKey, prayerName, prayerTime, current
       return true;
     }
 
-    const message = `🕌 حان الآن موعد أذان ${prayerName} حسب توقيت مدينة الصالح، الجزائر (${prayerTime})`;
+    const message = `🕌 حان الآن موعد أذان ${prayerName} حسب توقيت مدينة عين صالح وضواحيها  (${prayerTime})`;
     
     console.log(`📢 Sending ${prayerName} notification to ${subscribers.length} subscribers...`);
     
