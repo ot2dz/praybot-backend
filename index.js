@@ -14,6 +14,14 @@ const PORT = process.env.PORT || 3001;
 // --- CONFIGURATION ---
 // FIX: Hardcoded secrets are a security risk. Load from environment variables.
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
+
+// Function to check if user is admin
+function isAdmin(chatId) {
+  console.log('Checking admin for chatId:', chatId, 'type:', typeof chatId);
+  console.log('ADMIN_CHAT_ID:', ADMIN_CHAT_ID, 'type:', typeof ADMIN_CHAT_ID);
+  return chatId.toString() === ADMIN_CHAT_ID;
+}
 
 // Use persistent storage path if available (for Coolify), otherwise use a local 'data' folder.
 const DATA_PATH = process.env.DATA_PATH || path.join(__dirname, 'data');
@@ -139,12 +147,16 @@ async function loadSubscribersCache() {
     const cleanSubscribers = subscribers
       .filter(s => s && typeof s.chatId !== 'undefined')
       .map(s => {
-        if (!s.settings) {
-          s.settings = { ...DEFAULT_SETTINGS };
-          needsSave = true;
-        }
-        return s;
-      });
+    if (!s.settings) {
+      s.settings = { ...DEFAULT_SETTINGS };
+      needsSave = true;
+    }
+    if (!s.username) {
+      s.username = 'Unknown';
+      needsSave = true;
+    }
+    return s;
+  });
 
     if(cleanSubscribers.length !== subscribers.length) {
         console.warn('⚠️ Found and removed invalid entries from subscribers list.');
@@ -363,6 +375,7 @@ bot.onText(/\/start/, async (msg) => {
     if (!isSubscribed) {
       const newSubscriber = {
         chatId: chatId,
+        username: username,
         settings: { ...DEFAULT_SETTINGS }
       };
       subscribers.push(newSubscriber);
@@ -462,6 +475,7 @@ bot.onText(/🗓️ مواقيت اليوم|\/today/, async (msg) => {
 
 // --- Reminder Settings ---
 const expectingReminderValue = new Set();
+const expectingBroadcast = new Set();
 
 function getReminderMessageAndKeyboard(reminderMinutes) {
     const message = `⏰ **إعدادات التذكير قبل الأذان**\n\nالتذكير الحالي: **${reminderMinutes}** دقيقة قبل كل صلاة.\n\nيمكنك تعديل القيمة باستخدام الأزرار أو إرسال رقم مباشرة (بين 1 و 60).`;
@@ -536,6 +550,53 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
+// Add broadcast handler
+bot.onText(/\/broadcast/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) {
+    bot.sendMessage(chatId, '❌ ليس لديك صلاحية الوصول إلى هذا الأمر.');
+    return;
+  }
+  expectingBroadcast.add(chatId);
+  bot.sendMessage(chatId, '📢 أرسل الرسالة التي تريد بثها إلى جميع المشتركين.');
+});
+
+// Add stats handler
+bot.onText(/\/stats/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) {
+    bot.sendMessage(chatId, '❌ ليس لديك صلاحية الوصول إلى هذا الأمر.');
+    return;
+  }
+  try {
+    const subscribers = await loadSubscribersCache();
+    bot.sendMessage(chatId, `📊 إحصائيات المشتركين: \n- العدد الإجمالي: ${subscribers.length}`);
+  } catch (error) {
+    console.error('Error in /stats:', error);
+    bot.sendMessage(chatId, '❌ حدث خطأ أثناء استرجاع الإحصائيات.');
+  }
+});
+
+// Add subscribers handler
+bot.onText(/\/subscribers/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) {
+    bot.sendMessage(chatId, '❌ ليس لديك صلاحية الوصول إلى هذا الأمر.');
+    return;
+  }
+  try {
+    const subscribers = await loadSubscribersCache();
+    let list = '📋 قائمة المشتركين:\n';
+    subscribers.forEach(sub => {
+      list += `- ${sub.username || 'Unknown'} (Chat ID: ${sub.chatId})\n`;
+    });
+    bot.sendMessage(chatId, list);
+  } catch (error) {
+    console.error('Error in /subscribers:', error);
+    bot.sendMessage(chatId, '❌ حدث خطأ أثناء استرجاع قائمة المشتركين.');
+  }
+});
+
 // This handler must be after all bot.onText handlers
 bot.on('message', async (msg) => {
     // Ignore messages that don't have text
@@ -548,6 +609,24 @@ bot.on('message', async (msg) => {
     // Ignore messages that are commands
     if (msg.text.startsWith('/')) {
         expectingReminderValue.delete(chatId);
+        expectingBroadcast.delete(chatId);
+        return;
+    }
+
+    if (expectingBroadcast.has(chatId)) {
+        expectingBroadcast.delete(chatId);
+        const broadcastMessage = msg.text;
+        const subscribers = await loadSubscribersCache();
+        let sentCount = 0;
+        for (const sub of subscribers) {
+          try {
+            await bot.sendMessage(sub.chatId, broadcastMessage);
+            sentCount++;
+          } catch (error) {
+            console.error(`❌ فشل في إرسال الرسالة إلى ${sub.chatId}:`, error);
+          }
+        }
+        bot.sendMessage(chatId, `✅ تم بث الرسالة إلى ${sentCount} مشترك.`);
         return;
     }
 
